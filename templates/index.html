@@ -1,0 +1,21 @@
+{% extends 'layout.html' %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Available Channels</h2>
+  <ul class="list-group">
+    {% for channel in channels %}
+      <li class="list-group-item">
+        <a href="{{ url_for('channel', name=channel.name) }}">{{ channel.name }}</a>
+      </li>
+    {% endfor %}
+  </ul>
+  <form class="mt-4" method="get" action="{{ url_for('channel', name='') }}">
+    <div class="input-group">
+      <input name="name" class="form-control" placeholder="Enter channel name" required>
+      <div class="input-group-append">
+        <button class="btn btn-primary" type="submit">Join or Create</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

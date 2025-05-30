@@ -1,0 +1,4 @@
+flask
+flask-login
+flask-socketio
+flask-simple-captcha
