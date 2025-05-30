@@ -17,7 +17,7 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 YOUR_CONFIG = {
-    'SECRET_CAPTCHA_KEY': 'AbsjeajwjsJehsjdjejej',
+    'SECRET_CAPTCHA_KEY': 'LONGLONGKEY',
     'CAPTCHA_LENGTH': 6,
     'CAPTCHA_DIGITS': False,
     'EXPIRE_SECONDS': 600,
