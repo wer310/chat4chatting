@@ -49,6 +49,13 @@ class ChannelBan(db.Model):
     channel_id = db.Column(db.Integer, db.ForeignKey('channel.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
+class PrivateRoom(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user1_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user2_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user1 = db.relationship('User', foreign_keys=[user1_id])
+    user2 = db.relationship('User', foreign_keys=[user2_id])
+
 # Login manager
 @login_manager.user_loader
 def load_user(user_id):
@@ -63,7 +70,11 @@ def year(s):
 @login_required
 def index():
     channels = Channel.query.all()
-    return render_template('index.html', channels=channels)
+    private_rooms = PrivateRoom.query.filter(
+        (PrivateRoom.user1_id == current_user.id) |
+        (PrivateRoom.user2_id == current_user.id)
+    ).all()
+    return render_template('index.html', channels=channels, private_rooms=private_rooms)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -108,6 +119,11 @@ def logout():
 def redir_channel():
     return redirect("/channel/" + request.args["name"])
 
+@app.route('/private/')
+@login_required
+def redir_private():
+    return redirect('/private/' + request.args['username'])
+
 @app.route('/channel/<name>')
 @login_required
 def channel(name):
@@ -150,6 +166,36 @@ def moderate(name):
     db.session.commit()
     return redirect(url_for('channel', name=name))
 
+@app.route('/private/<username>')
+@login_required
+def private_chat(username):
+    other = User.query.filter_by(username=username).first()
+    if not other:
+        flash('User not found')
+        return redirect(url_for('index'))
+    if other.id == current_user.id:
+        flash('Cannot chat with yourself')
+        return redirect(url_for('index'))
+    room = PrivateRoom.query.filter(
+        ((PrivateRoom.user1_id == current_user.id) & (PrivateRoom.user2_id == other.id)) |
+        ((PrivateRoom.user1_id == other.id) & (PrivateRoom.user2_id == current_user.id))
+    ).first()
+    if not room:
+        room = PrivateRoom(user1=current_user, user2=other)
+        db.session.add(room)
+        db.session.commit()
+    return redirect(url_for('private_by_id', room_id=room.id))
+
+@app.route('/p/<int:room_id>')
+@login_required
+def private_by_id(room_id):
+    room = PrivateRoom.query.get(room_id)
+    if not room or current_user.id not in [room.user1_id, room.user2_id]:
+        flash('Chat not found')
+        return redirect(url_for('index'))
+    other = room.user2 if room.user1_id == current_user.id else room.user1
+    return render_template('private.html', room=room, other=other)
+
 # SocketIO
 @socketio.on('join')
 @login_required
@@ -169,6 +215,9 @@ def on_leave(data):
 @login_required
 def handle_message(data):
     room = data['room']
+    if room.startswith('private_'):
+        emit('message', {'msg': f'{current_user.username}: {data["msg"]}'}, room=room)
+        return
     chan = Channel.query.filter_by(name=room).first()
     if ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
         return
