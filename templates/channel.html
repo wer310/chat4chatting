@@ -32,6 +32,43 @@
     </select>
     <button class="btn btn-warning">Submit</button>
   </form>
+
+  <hr>
+  <h5>Channel Rights</h5>
+  <form method="post" action="{{ url_for('update_rights', name=channel.name) }}">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="a" id="rightA" {% if channel.allow_connect %}checked{% endif %}>
+      <label class="form-check-label" for="rightA">Allow anyone to join</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="w" id="rightW" {% if channel.allow_write %}checked{% endif %}>
+      <label class="form-check-label" for="rightW">Allow anyone to write</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="r" id="rightR" {% if channel.allow_read %}checked{% endif %}>
+      <label class="form-check-label" for="rightR">Allow anyone to read</label>
+    </div>
+    <button class="btn btn-secondary mt-2">Update Rights</button>
+  </form>
+
+  <hr>
+  <h5>Add Exception</h5>
+  <form method="post" action="{{ url_for('add_exception', name=channel.name) }}">
+    <input name="username" class="form-control mb-2" placeholder="Username">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="a" id="exA">
+      <label class="form-check-label" for="exA">Allow join</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="w" id="exW">
+      <label class="form-check-label" for="exW">Allow write</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="r" id="exR">
+      <label class="form-check-label" for="exR">Allow read</label>
+    </div>
+    <button class="btn btn-secondary mt-2">Add Exception</button>
+  </form>
   {% endif %}
 </div>
 

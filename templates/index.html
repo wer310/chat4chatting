@@ -17,5 +17,27 @@
       </div>
     </div>
   </form>
+
+  <h2 class="mt-5">Private Chats</h2>
+  <ul class="list-group">
+    {% for room in private_rooms %}
+      {% if room.user1 == current_user %}
+        {% set other = room.user2 %}
+      {% else %}
+        {% set other = room.user1 %}
+      {% endif %}
+      <li class="list-group-item">
+        <a href="{{ url_for('private_by_id', room_id=room.id) }}">{{ other.username }}</a>
+      </li>
+    {% endfor %}
+  </ul>
+  <form class="mt-4" method="get" action="{{ url_for('redir_private') }}">
+    <div class="input-group">
+      <input name="username" class="form-control" placeholder="Enter username" required>
+      <div class="input-group-append">
+        <button class="btn btn-secondary" type="submit">Start Private Chat</button>
+      </div>
+    </div>
+  </form>
 </div>
 {% endblock %}

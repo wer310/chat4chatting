@@ -38,6 +38,9 @@ class Channel(db.Model):
     rules = db.Column(db.Text, default='')
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     owner = db.relationship('User')
+    allow_connect = db.Column(db.Boolean, default=True)
+    allow_write = db.Column(db.Boolean, default=True)
+    allow_read = db.Column(db.Boolean, default=True)
 
 class ChannelModerator(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -48,6 +51,33 @@ class ChannelBan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     channel_id = db.Column(db.Integer, db.ForeignKey('channel.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+class ChannelPermission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    channel_id = db.Column(db.Integer, db.ForeignKey('channel.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    can_connect = db.Column(db.Boolean, default=False)
+    can_write = db.Column(db.Boolean, default=False)
+    can_read = db.Column(db.Boolean, default=False)
+
+class PrivateRoom(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user1_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user2_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user1 = db.relationship('User', foreign_keys=[user1_id])
+    user2 = db.relationship('User', foreign_keys=[user2_id])
+
+def check_right(channel, user, right):
+    if user.is_admin or channel.owner_id == user.id:
+        return True
+    perm = ChannelPermission.query.filter_by(channel_id=channel.id, user_id=user.id).first()
+    if right == 'a':
+        return channel.allow_connect or (perm and perm.can_connect)
+    if right == 'w':
+        return channel.allow_write or (perm and perm.can_write)
+    if right == 'r':
+        return channel.allow_read or (perm and perm.can_read)
+    return False
 
 # Login manager
 @login_manager.user_loader
@@ -63,7 +93,11 @@ def year(s):
 @login_required
 def index():
     channels = Channel.query.all()
-    return render_template('index.html', channels=channels)
+    private_rooms = PrivateRoom.query.filter(
+        (PrivateRoom.user1_id == current_user.id) |
+        (PrivateRoom.user2_id == current_user.id)
+    ).all()
+    return render_template('index.html', channels=channels, private_rooms=private_rooms)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -108,6 +142,11 @@ def logout():
 def redir_channel():
     return redirect("/channel/" + request.args["name"])
 
+@app.route('/private/')
+@login_required
+def redir_private():
+    return redirect('/private/' + request.args['username'])
+
 @app.route('/channel/<name>')
 @login_required
 def channel(name):
@@ -118,6 +157,8 @@ def channel(name):
         db.session.commit()
     if ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
         return "You are banned from this channel."
+    if not check_right(chan, current_user, 'r'):
+        return "You don't have read permission."
     rules = chan.rules
     return render_template('channel.html', channel=chan, rules=rules)
 
@@ -150,11 +191,82 @@ def moderate(name):
     db.session.commit()
     return redirect(url_for('channel', name=name))
 
+@app.route('/channel/<name>/rights', methods=['POST'])
+@login_required
+def update_rights(name):
+    chan = Channel.query.filter_by(name=name).first()
+    if not chan or (chan.owner != current_user and not current_user.is_admin):
+        return 'Permission denied'
+    chan.allow_connect = 'a' in request.form
+    chan.allow_write = 'w' in request.form
+    chan.allow_read = 'r' in request.form
+    db.session.commit()
+    return redirect(url_for('channel', name=name))
+
+@app.route('/channel/<name>/exception', methods=['POST'])
+@login_required
+def add_exception(name):
+    chan = Channel.query.filter_by(name=name).first()
+    if not chan or (chan.owner != current_user and not current_user.is_admin):
+        return 'Permission denied'
+    user = User.query.filter_by(username=request.form.get('username')).first()
+    if not user:
+        flash('User not found')
+        return redirect(url_for('channel', name=name))
+    perm = ChannelPermission.query.filter_by(channel_id=chan.id, user_id=user.id).first()
+    if not perm:
+        perm = ChannelPermission(channel_id=chan.id, user_id=user.id)
+        db.session.add(perm)
+    perm.can_connect = 'a' in request.form
+    perm.can_write = 'w' in request.form
+    perm.can_read = 'r' in request.form
+    db.session.commit()
+    return redirect(url_for('channel', name=name))
+
+@app.route('/private/<username>')
+@login_required
+def private_chat(username):
+    other = User.query.filter_by(username=username).first()
+    if not other:
+        flash('User not found')
+        return redirect(url_for('index'))
+    if other.id == current_user.id:
+        flash('Cannot chat with yourself')
+        return redirect(url_for('index'))
+    room = PrivateRoom.query.filter(
+        ((PrivateRoom.user1_id == current_user.id) & (PrivateRoom.user2_id == other.id)) |
+        ((PrivateRoom.user1_id == other.id) & (PrivateRoom.user2_id == current_user.id))
+    ).first()
+    if not room:
+        room = PrivateRoom(user1=current_user, user2=other)
+        db.session.add(room)
+        db.session.commit()
+    return redirect(url_for('private_by_id', room_id=room.id))
+
+@app.route('/p/<int:room_id>')
+@login_required
+def private_by_id(room_id):
+    room = PrivateRoom.query.get(room_id)
+    if not room or current_user.id not in [room.user1_id, room.user2_id]:
+        flash('Chat not found')
+        return redirect(url_for('index'))
+    other = room.user2 if room.user1_id == current_user.id else room.user1
+    return render_template('private.html', room=room, other=other)
+
 # SocketIO
 @socketio.on('join')
 @login_required
 def on_join(data):
     room = data['room']
+    if room.startswith('private_'):
+        join_room(room)
+        emit('status', {'msg': f'{current_user.username} has joined the channel.'}, room=room)
+        return
+    chan = Channel.query.filter_by(name=room).first()
+    if not chan or not check_right(chan, current_user, 'a'):
+        return
+    if ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
+        return
     join_room(room)
     emit('status', {'msg': f'{current_user.username} has joined the channel.'}, room=room)
 
@@ -169,8 +281,13 @@ def on_leave(data):
 @login_required
 def handle_message(data):
     room = data['room']
+    if room.startswith('private_'):
+        emit('message', {'msg': f'{current_user.username}: {data["msg"]}'}, room=room)
+        return
     chan = Channel.query.filter_by(name=room).first()
-    if ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
+    if not chan or ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
+        return
+    if not check_right(chan, current_user, 'w'):
         return
     emit('message', {'msg': f'{current_user.username}: {data["msg"]}'}, room=room)
 
