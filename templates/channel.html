@@ -3,12 +3,41 @@
 <div class="container mt-4">
   <h3>Channel: {{ channel.name }}</h3>
   <p><strong>Rules:</strong> {{ rules or 'No rules set yet.' }}</p>
+  <p><strong>Rights:</strong> {{ channel.access_rights }}</p>
 
   {% if channel.owner == current_user or current_user.is_admin %}
   <form method="post" action="{{ url_for('update_rules', name=channel.name) }}">
     <textarea name="rules" class="form-control" rows="2" placeholder="Edit channel rules...">{{ rules }}</textarea>
     <button class="btn btn-info mt-2">Update Rules</button>
   </form>
+  <form method="post" action="{{ url_for('update_rights', name=channel.name) }}" class="mt-2">
+    <input name="rights" class="form-control" placeholder="+a+w+r" value="{{ channel.access_rights }}">
+    <button class="btn btn-info mt-2">Update Rights</button>
+  </form>
+  <form method="post" action="{{ url_for('add_exception', name=channel.name) }}" class="mt-2">
+    <input name="username" class="form-control mb-2" placeholder="Username">
+    <select name="permission" class="form-control mb-2">
+      <option value="a">Allow Join</option>
+      <option value="w">Allow Write</option>
+      <option value="r">Allow Read</option>
+    </select>
+    <button class="btn btn-secondary">Add Exception</button>
+  </form>
+  <form method="post" action="{{ url_for('remove_exception', name=channel.name) }}" class="mt-2">
+    <input name="username" class="form-control mb-2" placeholder="Username">
+    <select name="permission" class="form-control mb-2">
+      <option value="a">Remove Join Exception</option>
+      <option value="w">Remove Write Exception</option>
+      <option value="r">Remove Read Exception</option>
+    </select>
+    <button class="btn btn-secondary">Remove Exception</button>
+  </form>
+  <h5 class="mt-3">Current Exceptions</h5>
+  <ul class="list-group">
+  {% for ex in exceptions %}
+    <li class="list-group-item">{{ ex.user.username }} - {{ ex.permission }}</li>
+  {% endfor %}
+  </ul>
   {% endif %}
 
   <div class="chat-box border p-3 mt-3" style="height: 300px; overflow-y: scroll;" id="chat"></div>
