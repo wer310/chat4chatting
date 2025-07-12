@@ -3,6 +3,7 @@
 run:
 ```bash
 pip3 install -r requirements.txt
+flask db upgrade
 python3 app.py
 ```
 
