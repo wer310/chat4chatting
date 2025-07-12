@@ -52,12 +52,6 @@ class ChannelBan(db.Model):
     channel_id = db.Column(db.Integer, db.ForeignKey('channel.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
-class ChannelPermissionException(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    channel_id = db.Column(db.Integer, db.ForeignKey('channel.id'))
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    permission = db.Column(db.String(1))
-    user = db.relationship('User')
 
 class PrivateRoom(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -76,14 +70,8 @@ def year(s):
     return str(datetime.date.today().year)
 
 def has_permission(channel, user, perm):
-    if user.is_authenticated and (user.is_admin or channel.owner_id == user.id):
-        return True
-    rights = channel.access_rights or '+a+w+r'
-    if f'+{perm}' in rights:
-        return True
-    if ChannelPermissionException.query.filter_by(channel_id=channel.id, user_id=user.id, permission=perm).first():
-        return True
-    return False
+    """Legacy permission check now always grants access."""
+    return True
 
 # Routes
 @app.route('/')
@@ -155,10 +143,9 @@ def channel(name):
     if ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
         return "You are banned from this channel."
     if not has_permission(chan, current_user, 'r'):
-        return "You don't have permission to read this channel."
+        pass  # permissions are no longer enforced
     rules = chan.rules
-    exceptions = ChannelPermissionException.query.filter_by(channel_id=chan.id).all()
-    return render_template('channel.html', channel=chan, rules=rules, exceptions=exceptions)
+    return render_template('channel.html', channel=chan, rules=rules)
 
 @app.route('/channel/<name>/rules', methods=['POST'])
 @login_required
@@ -169,57 +156,6 @@ def update_rules(name):
         db.session.commit()
     return redirect(url_for('channel', name=name))
 
-@app.route('/channel/<name>/rights', methods=['POST'])
-@login_required
-def update_rights(name):
-    chan = Channel.query.filter_by(name=name).first()
-    if chan and (chan.owner == current_user or current_user.is_admin):
-        rights = request.form.get('rights', '')
-        new_rights = ''
-        for p in 'awr':
-            if f'+{p}' in rights:
-                new_rights += f'+{p}'
-            elif f'-{p}' in rights:
-                new_rights += f'-{p}'
-            else:
-                new_rights += f'-{p}'
-        chan.access_rights = new_rights
-        db.session.commit()
-    return redirect(url_for('channel', name=name))
-
-@app.route('/channel/<name>/exception', methods=['POST'])
-@login_required
-def add_exception(name):
-    chan = Channel.query.filter_by(name=name).first()
-    if not chan or (chan.owner != current_user and not current_user.is_admin):
-        return redirect(url_for('channel', name=name))
-    username = request.form['username']
-    perm = request.form['permission']
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        flash('User not found')
-        return redirect(url_for('channel', name=name))
-    if perm not in 'awr':
-        flash('Invalid permission')
-        return redirect(url_for('channel', name=name))
-    if not ChannelPermissionException.query.filter_by(channel_id=chan.id, user_id=user.id, permission=perm).first():
-        db.session.add(ChannelPermissionException(channel_id=chan.id, user_id=user.id, permission=perm))
-        db.session.commit()
-    return redirect(url_for('channel', name=name))
-
-@app.route('/channel/<name>/exception/remove', methods=['POST'])
-@login_required
-def remove_exception(name):
-    chan = Channel.query.filter_by(name=name).first()
-    if not chan or (chan.owner != current_user and not current_user.is_admin):
-        return redirect(url_for('channel', name=name))
-    username = request.form['username']
-    perm = request.form['permission']
-    user = User.query.filter_by(username=username).first()
-    if user:
-        ChannelPermissionException.query.filter_by(channel_id=chan.id, user_id=user.id, permission=perm).delete()
-        db.session.commit()
-    return redirect(url_for('channel', name=name))
 
 @app.route('/channel/<name>/moderate', methods=['POST'])
 @login_required
@@ -281,8 +217,6 @@ def on_join(data):
         if chan:
             if ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
                 return
-            if not has_permission(chan, current_user, 'a'):
-                return
     join_room(room)
     emit('status', {'msg': f'{current_user.username} has joined the channel.'}, room=room)
 
@@ -302,8 +236,6 @@ def handle_message(data):
         return
     chan = Channel.query.filter_by(name=room).first()
     if ChannelBan.query.filter_by(channel_id=chan.id, user_id=current_user.id).first():
-        return
-    if not has_permission(chan, current_user, 'w'):
         return
     emit('message', {'msg': f'{current_user.username}: {data["msg"]}'}, room=room)
 
